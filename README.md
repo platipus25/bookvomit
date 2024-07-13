@@ -1,4 +1,4 @@
-# Word Vomit
+# Book Vomit
 
 ## Motivation
 
@@ -8,10 +8,9 @@ The project's goal is to accurately simulate and present the mass flow rate of a
 
 Words per minute => pages per second => mass per second
 
-Dimensions of the book will be fetched from the library of congress
-The book will be downloaded from Project Gutenberg
+Dimensions of the book will be fetched from the [openlibrary.org](openlibrary.org). The contents of the book will be downloaded from Project Gutenberg.
 
-The book will be rendered at the correct dimensions (preferably a canonical pdf version) to determine pagination
+The book will be rendered at the correct dimensions (preferably a canonical pdf version) to determine pagination.
 
 Word by word, each book will be read out into the vomit stream
 and as they reach a page boundary, the flow rate counters will be updated
