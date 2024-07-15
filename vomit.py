@@ -3,129 +3,81 @@ import http.client
 import urllib
 import json
 import time
+import logging
+import sqlite3
+import difflib
 
-# https://www.gutenberg.org/ebooks/offline_catalogs.html#the-gutindex-listings-of-ebooks
+from book_data import get_book
 
-# https://www.gutenberg.org/cache/epub/feeds/pg_catalog.csv
+logger = logging.getLogger(__name__)
 
-def gutenberg_download_book(text_number):
-    url = f"https://www.gutenberg.org/files/{text_number}/{text_number}-0.txt"
-    host = "www.gutenberg.org"
-    conn = http.client.HTTPSConnection(host)
-    conn.request("GET", f"/files/{text_number}/{text_number}-0.txt", headers={"Host": host})
-    response = conn.getresponse()
-    body = response.read()
-    #print(body)
+logging.basicConfig(filename='vomit.log', level=logging.INFO)
 
-def find_loc_item(title):
-    host = "www.loc.gov"
-    conn = http.client.HTTPSConnection(host)
-    query = urllib.parse.quote_plus(f"{title}")
-    conn.request("GET", f"/books/?fo=json&q={query}&c=4", headers={"Host": host})
-    response = conn.getresponse()
-    body = response.read()
-    body = json.loads(body)
-    print(body)
-
-def openlibrary_find_book(query):
-    endpoint = "https://openlibrary.org/search.json"
-
-    # https://openlibrary.org/search.json?q=the+great+gatsby&fields=title,author,id_project_gutenberg,key,type
-    # https://openlibrary.org/works/OL468431W/editions.json
-    # https://openlibrary.org/books/OL9219606M.json
-
-    host = "openlibrary.org"
-    query = urllib.parse.quote_plus(f"{query}")
-    conn = http.client.HTTPSConnection(host)
-
-    conn.request("GET", f"/search.json?q={query}&fields=title,author,id_project_gutenberg,key,type", headers={"Host": host})
-    response = conn.getresponse()
-    body = response.read()
-    body = json.loads(body)
-
-    found = body["docs"]
-
-    for work in found:
-        if "id_project_gutenberg" in work:
-            print(work)
-            print(work["id_project_gutenberg"])
-
-    print(len(found))
-    
-    #filtered = list(filter(lambda work: "id_project_gutenberg" in work, found))
-    #print(len(filtered))
-
-    editions_keys = list()
-
-    for work in found[:1]:
-        key = work["key"]
-
-        num_read = 0
-        max_read = 1000
-
-        while num_read < max_read:
-            conn.request("GET", f"{key}/editions.json?offset={num_read}", headers={"Host": host})
-            body = json.loads(conn.getresponse().read())
-            editions = body["entries"]
-
-            max_read = min(max_read, body['size'])
-
-            for edition in editions:
-                print(edition['title'])
-
-                editions_keys.append(edition['key'])
-
-            num_read += len(editions)
-            #time.sleep(0.100)
+db_conn = sqlite3.connect('books.db')
 
 
-    print("len(editions):", len(editions_keys))
-    print("/books/OL9219606M" in editions_keys)
+schema = ["""CREATE TABLE books
+(
+    key TEXT,
+    title text NOT NULL,
+    physical_format text,
+    number_of_pages integer,
+    first_sentence text,
+    physical_dimensions text,
+    weight real,
+    id_project_gutenberg integer,
+    CONSTRAINT books_key PRIMARY KEY (key)
+)"""]
 
-    #editions_keys = {"/books/OL9219606M"}
+def validate_schema(conn, expected_schema):
+    cursor = conn.cursor()
+    cursor.execute("SELECT sql FROM sqlite_schema WHERE type='table'")
+    actual_schema = cursor.fetchall()
+    actual_schema = [sql for (sql,) in actual_schema]
 
-    good_editions = []
- 
-    for key in editions_keys:
-        conn.request("GET", f"{key}.json", headers={"Host": host})
-        body = json.loads(conn.getresponse().read())
+    for stmt in expected_schema:
+        if stmt not in actual_schema:
+            logger.error(f"Expected statement not found in actual schema: {stmt}")
 
-        print(body["title"])
-        
-        if "number_of_pages" in body:
-            print(body["number_of_pages"])
-        if "physical_format" in body:
-            print(body["physical_format"])
-        if "pagination" in body:
-            print(body["pagination"])
-        if "physical_dimensions" in body:
-            print(body["physical_dimensions"])
-        
-        if "physical_dimensions" in body and "number_of_pages" in body:
-            print(body)
-            good_editions.append(body)
-            break
-     
-        #time.sleep(0.100)
-        
+            closest_matches = difflib.get_close_matches(stmt, actual_schema)
+            if closest_matches:
+                logger.info("Did you mean one of these?")
+                for match in closest_matches:
+                    diff = difflib.unified_diff(
+                            stmt.splitlines(keepends=True),
+                            match.splitlines(keepends=True),
+                            )
+                    logger.info(f"  - {''.join(diff)}")
+                    logger.info(f"'{stmt}' '{match}'")
+            return False
 
-    print(good_editions)
-    return good_editions
+    logger.info("Schema validation passed")
+    return True
 
+ok = validate_schema(db_conn, schema)
+if not ok:
+    print("Schema did not validate, check log and fix")
+    exit()
 
-with open('pg_catalog.csv', newline='') as csvfile:
-    spamreader = csv.DictReader(csvfile)
+cur = db_conn.cursor()
 
-    for row in spamreader:
-        if "The Great Gatsby" in row["Title"]:
-            print(row)
-            #download_book(row["Text#"])
-            #find_loc_item(row["Title"])
+#cur.execute(schema[0])
 
+def add_book(title):
 
-books = openlibrary_find_book("New Collected Rhymes")
+    book = get_book(title)
+    print(book)
 
-if not books:
-    print("Could not find the book")
+    cur.execute("INSERT INTO books VALUES(:key, :title, :physical_format, :number_of_pages, :first_sentence, :physical_dimensions, :weight, :id_project_gutenberg)", book)
+    db_conn.commit()
 
 
+add_book("The Great Gatsby")
+
+words_per_minute = 120
+word_reading_period = 1.0 / (words_per_minute / 60.0)
+
+words = []#book["contents"].split()
+for word in words:
+    print(word)
+    time.sleep(word_reading_period)
